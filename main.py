@@ -31,6 +31,36 @@ def describe_size(num_bytes: int) -> str:
     return f"{num_bytes} bytes ({num_bytes / 1024:.1f} KiB)"
 
 
+def validate_png(path: Path) -> None:
+    """Fail loudly unless path is a whole PNG within the bounty caps.
+
+    Checks the PNG signature, reads the IHDR width/height, and enforces
+    the competition limits (at most 1024x1024 pixels, at most 1 MiB).
+    A corrupt or oversized copy must never look like a success.
+    """
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        print(f"ERROR: {path} is not a PNG file", file=sys.stderr)
+        raise SystemExit(1)
+    if len(data) < 24 or data[12:16] != b"IHDR":
+        print(f"ERROR: {path} has no IHDR chunk", file=sys.stderr)
+        raise SystemExit(1)
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    if width > 1024 or height > 1024:
+        print(
+            f"ERROR: {path} is {width}x{height}, over the 1024x1024 cap",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if len(data) > 1_048_576:
+        print(
+            f"ERROR: {path} is {describe_size(len(data))}, over the 1 MiB cap",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+
 def place_front_page() -> int:
     """Copy entry.png beside this file into the output folder.
 
@@ -62,6 +92,7 @@ def place_front_page() -> int:
         raise SystemExit(1)
 
     print(f"Done: wrote {target} ({describe_size(copied_bytes)})")
+    validate_png(target)
     return copied_bytes
 
 
